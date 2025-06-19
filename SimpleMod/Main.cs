@@ -17,7 +17,7 @@ namespace s649DPM
 {
     namespace PatchMain
     {
-        [BepInPlugin("s649_DummyPracticeMod", "Dummy Practice Mod", "0.0.0.0")]
+        [BepInPlugin("s649_DummyPracticeMod", "Dummy Practice Mod", "0.2.0.0")]
 
         public class Main : BaseUnityPlugin
         {
@@ -33,7 +33,7 @@ namespace s649DPM
                 CE_LogLevel = Config.Bind("#zz-Debug","LogLevel", 0, "For debug use. If the value is -1, it won't output logs");
                 CE_AllowFunction00 = Config.Bind("#general","Mod_Enable", true, "Enable Mod function");
 
-                var harmony = new Harmony("Main");
+                //var harmony = new Harmony("Main");
                 new Harmony("Main").PatchAll();
             }
             internal static void Lg(string text, int lv = 0)
@@ -50,28 +50,47 @@ namespace s649DPM
             [HarmonyPatch(typeof(StatsStamina), "Mod")]
             public static bool Prefix(StatsStamina __instance, ref int a)
             {
+                if (!Main.cf_Allow_F00) { return true; }//exclusive
                 Chara CC = BaseStats.CC;
-                bool eval = false;
-                string dt = "[s649-DPM]CC:" + CC.NameSimple + "/ai:" + CC.ai.ToString() + "/:sleep" + CC.sleepiness.GetValue().ToString() + "/";
-                if (!Main.cf_Allow_F00){return true;}//exclusive
-
+                if (!CC.IsPC || !(CC.ai is AI_PracticeDummy || CC.ai is AI_Torture) || !(a < 0)) { return true; }
                 
-                if(CC.IsPC && (CC.ai is AI_PracticeDummy) && (a < 0) && CC.sleepiness.GetValue() < CC.sleepiness.max)
+                //bool eval = false;
+                string dt = "[s649-DPM]CC:" + CC.NameSimple + "/ai:" + CC.ai.ToString() + "/sleep:" + CC.sleepiness.GetValue().ToString() + "/hunger:" + CC.hunger.GetValue().ToString();
+                int sleepiness = CC.sleepiness.GetValue();
+                int hunger = CC.hunger.GetValue();
+                if (sleepiness < CC.sleepiness.max)
                 {
-                    
+                    if (hunger < CC.hunger.max / 2)
+                    {
+                        int seed = (hunger < CC.hunger.max / 4) ? 5 : 10;
+                        if (EClass.rnd(seed) == 0)
+                        { 
+                            CC.hunger.Mod(1);
+                            dt += "/hunger:Plus";
+                            Main.Lg(dt);
+                            return false;
+                        }
+                        //if (eval) { return false; }
+                        
+                    }
                     if(EClass.rnd(Lower(CC.LV + 100, 200)) > 100)//LVが高ければ眠気増加回避※上限100LV MAX 50%
                     {
-                        eval = true;
-                        dt += "eval:" + eval.ToString();
+                        //eval = true;
+                        dt += "/Sleepiness:Eval";
                         Main.Lg(dt);
                         return false; 
                     }
-                    CC.sleepiness.Mod(-a);
-                    
-                    dt += "eval:" + eval.ToString();
-                    Main.Lg(dt);
-                    return false;
+                    int seed2 = (sleepiness > CC.sleepiness.max / 2) ? 2 : 4;
+                    if (EClass.rnd(seed2) != 0) 
+                    {
+                        CC.sleepiness.Mod(1);
+                        dt += "/Sleepiness:Add";
+                        Main.Lg(dt);
+                        return false;
+                    }
                 }
+                dt += "/Vanilla:StaminaDown";
+                Main.Lg(dt);
                 return true;
             }
 
