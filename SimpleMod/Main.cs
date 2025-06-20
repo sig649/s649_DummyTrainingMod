@@ -1,39 +1,47 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+//using System.Linq;
+//using System.Text;
+//using System.Threading.Tasks;
 
 using BepInEx;
 using HarmonyLib;
 
 using UnityEngine;
 using BepInEx.Configuration;
-using System.IO;
-using System.Diagnostics;
+//using System.IO;
+//using System.Diagnostics;
 using Debug = UnityEngine.Debug;
+using static s649ElinLog.ElinLog;
+using s649ElinLog;
 
+
+///////v0.2.1......空腹度が限界の半分未満なら眠気増加の代わりに確率で満腹度を消費するように（v.0.2.0の時点でその仕様ではあったが更新のお知らせが不正確な記述だったので改めて記述）
+///////............食べ過ぎ状態の眠気回避代替の確率を50%に。（満腹時は25％。非空腹時は10％）（判定は元々のスタミナ減少のタイミングで行っているので実際はこれよりも満腹度は減りにくい）
+///////............ログレベルの仕様を変更して、数値を上げることで重要度の低いログをフィルターして表示しないように。
+//////.............眠気増加の回避判定に用いるLV（総フィートポイント値）の影響度を１０分の一に。上限1000。
 namespace s649DPM
 {
     namespace PatchMain
     {
-        [BepInPlugin("s649_DummyPracticeMod", "Dummy Practice Mod", "0.2.0.0")]
+        [BepInPlugin("s649_DummyPracticeMod", "Dummy Practice Mod", "0.2.1.0")]
 
         public class Main : BaseUnityPlugin
         {
             //entry---------------------------------------------------
-            private static ConfigEntry<int> CE_LogLevel;//デバッグ用のログの出力LV　-1:出力しない 0~:第二引数に応じて出力
+            internal static ConfigEntry<int> CE_LogLevel;//デバッグ用のログの出力LV　1:Errorのみ 
             public static int cf_LogLevel =>  CE_LogLevel.Value;
             
-            private static ConfigEntry<bool> CE_AllowFunction00;//
+            private static ConfigEntry<bool> CE_AllowFunction00;
             public static bool cf_Allow_F00 =>  CE_AllowFunction00.Value;
             //loading-------------------------------------------------
             private void Start()
             {
-                CE_LogLevel = Config.Bind("#zz-Debug","LogLevel", 0, "For debug use. If the value is -1, it won't output logs");
+                CE_LogLevel = Config.Bind("#zz-Debug","LogLevel", 0, "For debug use. ");
                 CE_AllowFunction00 = Config.Bind("#general","Mod_Enable", true, "Enable Mod function");
 
                 //var harmony = new Harmony("Main");
+                ElinLog.SetConfig(cf_LogLevel, "DPM");
                 new Harmony("Main").PatchAll();
             }
             internal static void Lg(string text, int lv = 0)
@@ -46,51 +54,126 @@ namespace s649DPM
         [HarmonyPatch]
         public class PatchExe
         {
+            private static readonly string modNS = "DPM";
+
             [HarmonyPrefix]
             [HarmonyPatch(typeof(StatsStamina), "Mod")]
             public static bool Prefix(StatsStamina __instance, ref int a)
             {
                 if (!Main.cf_Allow_F00) { return true; }//exclusive
-                Chara CC = BaseStats.CC;
-                if (!CC.IsPC || !(CC.ai is AI_PracticeDummy || CC.ai is AI_Torture) || !(a < 0)) { return true; }
-                
-                //bool eval = false;
-                string dt = "[s649-DPM]CC:" + CC.NameSimple + "/ai:" + CC.ai.ToString() + "/sleep:" + CC.sleepiness.GetValue().ToString() + "/hunger:" + CC.hunger.GetValue().ToString();
-                int sleepiness = CC.sleepiness.GetValue();
-                int hunger = CC.hunger.GetValue();
-                if (sleepiness < CC.sleepiness.max)
+                ClearLogStack();
+                string title = "SS.M";
+                LogStack("[" + modNS + "/" + title + "]");
+
+                Chara c_trainer;
+                AIAct aiAct;
+                try
                 {
-                    if (hunger < CC.hunger.max / 2)
+                    c_trainer = BaseStats.CC; //Chara CC = BaseStats.CC;
+                    aiAct = c_trainer.ai;
+                }
+                catch (NullReferenceException ex)
+                {
+                    LogError("CharaCheckFailed");
+                    //checktext = string.Join("/", checkThings);
+                    //LogError(checktext);
+                    Debug.Log(ex.Message);
+                    Debug.Log(ex.StackTrace);
+                    return true;
+                }
+                if (!c_trainer.IsPC || !(aiAct is AI_PracticeDummy || aiAct is AI_Torture) || !(a < 0)) { return true; }
+
+                //bool eval = false;
+                List<string> checkThings = new();
+                string checktext = "";
+                
+                int sleepiness;// = CC.sleepiness.GetValue();
+                int slpPhase;
+                int hunger;// = CC.hunger.GetValue();
+                int hngPhase;
+                int maxSleepiness;
+                int maxHunger;
+                try
+                {
+                    //c_user = __instance.CC;
+                    checkThings.Add("C:" + StrConv(c_trainer));
+                    checkThings.Add("AI:" + StrConv(aiAct));
+                    checkThings.Add("Slp:" + StrConv(sleepiness = c_trainer.sleepiness.GetValue()));
+                    checkThings.Add("SlpP:" + StrConv(slpPhase = c_trainer.sleepiness.GetPhase()));
+                    checkThings.Add("Hng:" + StrConv(hunger = c_trainer.hunger.GetValue()));
+                    checkThings.Add("HngP:" + StrConv(hngPhase = c_trainer.hunger.GetPhase()));
+                    //checkThings.Add("mod:" + StrConv(mod));
+                    maxSleepiness = c_trainer.sleepiness.max;
+                    maxHunger = c_trainer.hunger.max;
+                }
+                catch (NullReferenceException ex)
+                {
+                    LogError("ArgCheckFailed for NullPo");
+                    checktext = string.Join("/", checkThings);
+                    LogError(checktext);
+                    Debug.Log(ex.Message);
+                    Debug.Log(ex.StackTrace);
+                    return true;
+                }
+                //checktext = string.Join("/", checkThings);
+                //LogDeep(checktext);
+                //string dt = "[s649-DPM]CC:" + CC.NameSimple + "/ai:" + CC.ai.ToString() + "/sleep:" + CC.sleepiness.GetValue().ToString() + "/hunger:" + CC.hunger.GetValue().ToString();
+                //int sleepiness = CC.sleepiness.GetValue();
+                //int hunger = CC.hunger.GetValue();
+
+                if (sleepiness < maxSleepiness)
+                {
+                    if (hunger < maxHunger / 2)
                     {
-                        int seed = (hunger < CC.hunger.max / 4) ? 5 : 10;
-                        if (EClass.rnd(seed) == 0)
+                        if (hngPhase == 0 && EClass.rnd(2) == 0)//v0.2.1
+                        {
+                            c_trainer.hunger.Mod(1);
+                            checkThings.Add("hunger:Plus");
+                            checktext = string.Join("/", checkThings);
+                            LogInfo(checktext);
+                            return false;
+                        }
+                        //int seed = (hunger < maxHunger / 4) ? 5 : 10;
+                        if (hngPhase <= 2 && EClass.rnd(4) == 0)
                         { 
-                            CC.hunger.Mod(1);
-                            dt += "/hunger:Plus";
-                            Main.Lg(dt);
+                            c_trainer.hunger.Mod(1);
+                            checkThings.Add("hunger:Plus");
+                            checktext = string.Join("/", checkThings);
+                            LogInfo(checktext);
+                            return false;
+                        }
+                        if (EClass.rnd(10) == 0)
+                        {
+                            c_trainer.hunger.Mod(1);
+                            checkThings.Add("hunger:Plus"); 
+                            checktext = string.Join("/", checkThings);
+                            LogInfo(checktext);
                             return false;
                         }
                         //if (eval) { return false; }
-                        
+
                     }
-                    if(EClass.rnd(Lower(CC.LV + 100, 200)) > 100)//LVが高ければ眠気増加回避※上限100LV MAX 50%
+                    if(EClass.rnd(Lower(c_trainer.LV + 1000, 2000)) >= 1000)//LVが高ければ眠気増加回避※上限1000LV MAX 50%
                     {
                         //eval = true;
-                        dt += "/Sleepiness:Eval";
-                        Main.Lg(dt);
+                        checkThings.Add("Sleepiness:Eval"); //dt += "/Sleepiness:Eval";
+                        checktext = string.Join("/", checkThings);
+                        LogInfo(checktext);//Main.Lg(dt);
                         return false; 
                     }
-                    int seed2 = (sleepiness > CC.sleepiness.max / 2) ? 2 : 4;
+                    int seed2 = (sleepiness > maxSleepiness / 2) ? 2 : 4;
                     if (EClass.rnd(seed2) != 0) 
                     {
-                        CC.sleepiness.Mod(1);
-                        dt += "/Sleepiness:Add";
-                        Main.Lg(dt);
+                        c_trainer.sleepiness.Mod(1);
+                        checkThings.Add("Sleepiness:Add"); //dt += "/Sleepiness:Add";
+                        checktext = string.Join("/", checkThings);
+                        LogInfo(checktext);//Main.Lg(dt);
                         return false;
                     }
                 }
-                dt += "/Vanilla:StaminaDown";
-                Main.Lg(dt);
+                checkThings.Add("Vanilla:StaminaDown"); //dt += "/Vanilla:StaminaDown";
+                checktext = string.Join("/", checkThings);
+                LogInfo(checktext);//Main.Lg(dt);
                 return true;
             }
 
