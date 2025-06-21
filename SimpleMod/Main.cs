@@ -17,9 +17,9 @@ using s649ElinLog;
 
 
 ///////v0.2.1......空腹度が限界の半分未満なら眠気増加の代わりに確率で満腹度を消費するように（v.0.2.0の時点でその仕様ではあったが更新のお知らせが不正確な記述だったので改めて記述）
-///////............食べ過ぎ状態の眠気回避代替の確率を50%に。（満腹時は25％。非空腹時は10％）（判定は元々のスタミナ減少のタイミングで行っているので実際はこれよりも満腹度は減りにくい）
+///////............食べ過ぎ状態の眠気回避代替の確率を50%に。（満腹時は25％、非空腹時は10％）（判定は元々のスタミナ減少のタイミングで行っているので実際はこれよりも満腹度は減りにくい）
 ///////............ログレベルの仕様を変更して、数値を上げることで重要度の低いログをフィルターして表示しないように。
-//////.............眠気増加の回避判定に用いるLV（総フィートポイント値）の影響度を１０分の一に。上限1000。
+//////.............眠気増加の回避判定に用いるLV（総フィートポイント値）の影響度を１０分の一にナーフしたお詫びに、回避判定確率上限を80％に。
 namespace s649DPM
 {
     namespace PatchMain
@@ -37,7 +37,7 @@ namespace s649DPM
             //loading-------------------------------------------------
             private void Start()
             {
-                CE_LogLevel = Config.Bind("#zz-Debug","LogLevel", 0, "For debug use. ");
+                CE_LogLevel = Config.Bind("#zz-Debug","LogLevel", 0, "For debug use. The higher the number, the more logs can be filtered.");
                 CE_AllowFunction00 = Config.Bind("#general","Mod_Enable", true, "Enable Mod function");
 
                 //var harmony = new Harmony("Main");
@@ -134,7 +134,7 @@ namespace s649DPM
                             return false;
                         }
                         //int seed = (hunger < maxHunger / 4) ? 5 : 10;
-                        if (hngPhase <= 2 && EClass.rnd(4) == 0)
+                        if (hngPhase <= 1 && EClass.rnd(4) == 0)
                         { 
                             c_trainer.hunger.Mod(1);
                             checkThings.Add("hunger:Plus");
@@ -153,7 +153,7 @@ namespace s649DPM
                         //if (eval) { return false; }
 
                     }
-                    if(EClass.rnd(Lower(c_trainer.LV + 1000, 2000)) >= 1000)//LVが高ければ眠気増加回避※上限1000LV MAX 50%
+                    if(EClass.rnd(Lower(c_trainer.LV + 1000, 5000)) >= 1000)//LVが高ければ眠気増加回避※MAX 80%
                     {
                         //eval = true;
                         checkThings.Add("Sleepiness:Eval"); //dt += "/Sleepiness:Eval";
